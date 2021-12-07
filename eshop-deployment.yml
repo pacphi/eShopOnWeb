@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: eshop-api
+  name: eshop-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eshop-api
+  template:
+    metadata:
+      labels:
+        app: eshop-api
+    spec:
+      imagePullSecrets:
+      - name: registry-credentials
+      containers:
+      - image: harbor.klu.zoolabs.me/platform/apps/eshop-api@sha256:909c595876ee1654ed87f475f2731d7be91053a01ebf76a01cb685e0b45ed4bd
+        name: eshop-api
+        ports:
+        - containerPort: 8080
+        env:
+          - name: baseUrls__apiBase
+            value: eshop-api.staging.svc.cluster.local:8080/api/
+          - name: baseUrls__webBase
+            value: eshop-web.staging.svc.cluster.local:8080/
+          - name: ConnectionStrings__CatalogConnection
+            value: "Server=eshop-db.staging.svc.cluster.local,1433;User Id=sa;Password=TEMP_PASSWORD;Database=Microsoft.eShopOnWeb.CatalogDb;"
+          - name: ConnectionStrings__IdentityConnection
+            value: "Server=eshop-db.staging.svc.cluster.local,1433;User Id=sa;Password=TEMP_PASSWORD;Database=Microsoft.eShopOnWeb.Identity;"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: eshop-web
+  name: eshop-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eshop-web
+  template:
+    metadata:
+      labels:
+        app: eshop-web
+    spec:
+      imagePullSecrets:
+      - name: registry-credentials
+      containers:
+      - image: harbor.klu.zoolabs.me/platform/apps/eshop-web@sha256:f50f0522e3629d7918a18bf4a5b344a2e883ef7aa1dba0bdaa5a27668f689324
+        name: eshop-web
+        ports:
+        - containerPort: 8080
+        env:
+          - name: baseUrls__apiBase
+            value: eshop-api.staging.svc.cluster.local:8080/api/
+          - name: baseUrls__webBase
+            value: eshop-web.staging.svc.cluster.local:8080/
+          - name: ConnectionStrings__CatalogConnection
+            value: "Server=eshop-db.staging.svc.cluster.local,1433;User Id=sa;Password=TEMP_PASSWORD;Database=Microsoft.eShopOnWeb.CatalogDb;"
+          - name: ConnectionStrings__IdentityConnection
+            value: "Server=eshop-db.staging.svc.cluster.local,1433;User Id=sa;Password=TEMP_PASSWORD;Database=Microsoft.eShopOnWeb.Identity;"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eshop-web
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: "eshop-web"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eshop-api
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: "eshop-api"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mssql-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: eshop-db
+  name: eshop-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eshop-db
+  template:
+    metadata:
+      labels:
+        app: eshop-db
+    spec:
+      hostname: mssqlinst
+      securityContext:
+        fsGroup: 10001
+      containers:
+      - image: mcr.microsoft.com/mssql/server:2019-CU14-ubuntu-18.04
+        name: eshop-db
+        env:
+        - name: ACCEPT_EULA
+          value: "Y"
+        - name: SA_PASSWORD
+          value: "TEMP_PASSWORD"
+        volumeMounts:
+        - name: mssqldb
+          mountPath: /var/opt/mssql
+        ports:
+        - containerPort: 1433
+      volumes:
+      - name: mssqldb
+        persistentVolumeClaim:
+          claimName: mssql-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eshop-db
+spec:
+  ports:
+  - port: 1433
+    targetPort: 1433
+  selector:
+    app: "eshop-db"
