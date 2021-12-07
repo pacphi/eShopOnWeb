@@ -164,7 +164,7 @@ kubectl apply -f registry-credentials.yml -n staging
 Now, let's deploy the application
 
 ```
-kubectl apply -f eshop-deployment.yml
+kubectl apply -f eshop-deployment.yml -n staging
 ```
 
 Next, we want to interact with the application.  So let's setup port forwarding.
