@@ -25,7 +25,7 @@ How might we build and deploy this multi-project application so that it ultimate
 ## Clone
 
 ```
-git clone https://github.com/pacphi/AltPackageRepository
+git clone https://github.com/pacphi/eShopOnWeb
 ```
 
 You can switch between two branches:
