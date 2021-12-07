@@ -175,3 +175,156 @@ kubectl port-forward $(kubectl get po -l app=eshop-web -n staging | tail -n -1 |
 
 Got visit `http://localhost:8080` in your favorite browser.
 
+Type `Ctrl+c` back in your Terminal to stop port-forwarding.
+
+To tear everything down:
+
+```
+kubectl delete -f eshop-deployment.yml -n staging
+kubectl delete -f registry-credentials.yml -n staging
+kubectl delete ns staging
+```
+
+## Automated Deploy
+
+We'll start with the assumption you have already published the container images that you want to deploy.
+
+Now we're going to walk thru the process of how to setup continuous deployment.
+
+We're going to leverage the App spec of [kapp-controller](https://carvel.dev/kapp-controller/docs/latest/app-spec/) to do it!
+
+Make sure to target an appropriate workload cluster.
+
+### Install Carvel kapp-controller into cluster
+
+```
+kubectl apply -f https://github.com/vmware-tanzu/carvel-kapp-controller/releases/download/v0.30.0/release.yml
+```
+
+### Create a namespace
+
+```
+kubectl create namespace staging
+```
+
+### Create service account tied to namespace
+
+Creates a namespace tied service account which has permissions to change any resource within that namespace. It will be used by App CR below.
+
+```
+cat > {namespace}-sa.yml <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {namespace}-ns-sa
+  namespace: {namespace}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {namespace}-ns-role
+  namespace: {namespace}
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {namespace}-ns-role-binding
+  namespace: {namespace}
+subjects:
+- kind: ServiceAccount
+  name: {namespace}-ns-sa
+  namespace: {namespace}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {namespace}-ns-role
+EOF
+```
+> Replace occurrences of `{namespace}` with same name you defined in the earlier step.
+
+
+```
+kubectl apply -f {namespace}-sa.yml
+```
+> Replace `{namespace}` with same name you defined in the earlier step.
+
+
+### Apply custom resource definition files
+
+Create then apply these CRs which will gate changes:
+
+```
+cat > eshop-db-cd-via-gitrepo.yml <<EOF
+apiVersion: kappctrl.k14s.io/v1alpha1
+kind: App
+metadata:
+  name: eshop-db
+  namespace: {namespace}
+spec:
+  serviceAccountName: {namespace}-ns-sa
+  fetch:
+  - git:
+      url: https://github.com/pacphi/k8s-manifests
+      ref: origin/main
+      subPath: com/vmware/eshop/eshop-db/{namespace}
+  template:
+  - ytt: {}
+  deploy:
+  - kapp: {}
+EOF
+
+cat > eshop-api-cd-via-gitrepo.yml <<EOF
+apiVersion: kappctrl.k14s.io/v1alpha1
+kind: App
+metadata:
+  name: eshop-api
+  namespace: {namespace}
+spec:
+  serviceAccountName: {namespace}-ns-sa
+  fetch:
+  - git:
+      url: https://github.com/pacphi/k8s-manifests
+      ref: origin/main
+      subPath: com/vmware/eshop/eshop-api/{namespace}
+  template:
+  - ytt: {}
+  deploy:
+  - kapp: {}
+EOF
+
+cat > eshop-web-cd-via-gitrepo.yml <<EOF
+apiVersion: kappctrl.k14s.io/v1alpha1
+kind: App
+metadata:
+  name: eshop-web
+  namespace: {namespace}
+spec:
+  serviceAccountName: {namespace}-ns-sa
+  fetch:
+  - git:
+      url: https://github.com/pacphi/k8s-manifests
+      ref: origin/main
+      subPath: com/vmware/eshop/eshop-web/{namespace}
+  template:
+  - ytt: {}
+  deploy:
+  - kapp: {}
+EOF
+
+kubectl apply -f eshop-db-cd-via-gitrepo.yml
+kubectl apply -f eshop-api-cd-via-gitrepo.yml
+kubectl apply -f eshop-web-cd-via-gitrepo.yml
+```
+> Replace occurrences of `{namespace}` with same name you defined in the earlier step.  This repo holds all the Kubernetes manifests for the app you'll continuously deploy.
+
+You will have to orchestrate git commit updates by updating the SHA of the container image reference in `config.yml` file located under the `subPath` directory of the repo after each image tag and push (or `kp save image`) to a container registry.
+
+
+If you do choose this for your CR, then you'll want to fork the `k8s-manifests` git repo for your own purposes.  And you'll want to fork the `eShopOnWeb` repo as defined in `config.yml`.  Note that the container `image` reference will need to be updated in `config.yml` because it's expected you will publish image updates to your own private container registry.
+
+
+Hopefully you can see how to automate this - separating build and publish image duties from deployment.
