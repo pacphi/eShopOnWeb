@@ -110,7 +110,7 @@ Make sure you're targeting the cluster with Tanzu Build Service installed, then
 
 ```
 docker images
-docker tag {image-id}
+docker tag {image-id} {harbor-domain}/{project}/{repository}/{app-name}
 docker push {harbor-domain}/{project}/{repository}/{app-name}
 ```
 
